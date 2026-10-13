@@ -239,8 +239,8 @@ def on_open_desmos(sender, app_data, builder):
     if state.result is None:
         return
     try:
-        graph = builder(state.analysis[state.result_method], state.result,
-                        current_channel(), dpg.get_value("row_start"))
+        graph = builder(state.analysis[state.result_method], state.result, current_channel(),
+                        dpg.get_value("row_start"), dpg.get_value("col_start"))
         viz.open_graph(graph)
         set_status("Opened the Desmos graph in your browser (needs an internet connection).")
     except Exception as exc:
@@ -371,8 +371,8 @@ def build_ui():
         dpg.add_group(tag="matrix_group")
         dpg.add_separator()
         dpg.add_text("", tag="summary")
-        dpg.add_text("Desmos (opens in your browser; the scanline graph uses the first row shown above):",
-                     color=(170, 170, 170))
+        dpg.add_text("Desmos (opens in your browser). Graphs start at the top-left cell of the matrix above:\n"
+                     "its 2x2 block, its row, and the channel selected.", color=(170, 170, 170))
         dpg.add_group(tag="desmos_buttons", horizontal=True)
 
 

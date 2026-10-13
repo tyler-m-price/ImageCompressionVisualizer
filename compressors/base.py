@@ -46,7 +46,8 @@ class Compressor:
     def desmos_views(self):
         """List of (button label, builder) pairs.
 
-        builder(analysis, result, channel, row) -> PyDesmos Graph.
+        builder(analysis, result, channel, row, col) -> PyDesmos Graph, where
+        (row, col) is the top-left cell shown in the matrix view.
         """
         return []
 
