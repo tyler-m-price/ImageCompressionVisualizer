@@ -13,10 +13,8 @@ python main.py
 
 1. **Config Menu**: *Select Image...* opens your OS file picker. Then choose a technique and a compression amount, and press *Compress*. *Save compressed image...* writes the result to disk.
 2. **Image**: the original (working copy) and the compressed result.
-3. **Compression Visualizer**: one color channel shown as a matrix of numbers (original, compressed, or the difference), a summary of the math, and buttons that open interactive Desmos graphs in your browser (internet connection required). Each graph has a `k` slider for the number of singular values kept:
+3. **Compression Visualizer**: one color channel shown as a matrix of numbers (original, compressed, or the difference), a summary of the math, and a button that opens an interactive Desmos graph in your browser (internet connection required). The graph has a `k` slider for the number of singular values kept:
    - **2x2 block as a transformation**: the 2x2 block at the matrix view's top-left cell acts on the plane, mapping the unit circle to an ellipse. Rotate the orthonormal pair (v1, v2) with `φ` until A·v1 ⟂ A·v2 to find the block's singular vectors (the same rotation the Jacobi SVD performs). Drag `k` to watch compression reshape the ellipse, and watch the 6x6 patch of pixels next to it change.
-   - **Singular value spectrum**: every singular value (log scale), with the kept ones highlighted, and the share of energy kept.
-   - **Rebuild a row layer by layer**: one row of pixels as the sum of its first `k` rank-1 layers.
 
 Large photos are scaled down to a *working resolution* (256/384/512 px on the long side) before compressing, because the hand-written SVD costs O(n^3). The first compression of an image computes the decomposition. After that, changing the amount is instant.
 

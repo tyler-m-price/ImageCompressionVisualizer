@@ -46,7 +46,7 @@ def jacobi_svd(matrices, tol=1e-8, max_sweeps=40, progress=None):
 
     Idea: apply plane (Givens) rotations J to the columns of A until every
     pair of columns is orthogonal. Then A V = W with orthogonal columns, so
-    sigma_j = ||w_j||, u_j = w_j / sigma_j and A = U diag(sigma) V^T.
+    sigma_j = ||w_j||, u_j = w_j / sigma_j and A = U diag(sigma) V^T
 
     For a pair of columns a_p, a_q with
         alpha = a_p . a_p,  beta = a_q . a_q,  gamma = a_p . a_q

@@ -2,7 +2,7 @@
 
 Config Menu -> pick an image, technique, amount; run compression; save result.
 Image       -> original and compressed image.
-Visualizer  -> the image as a matrix, the math summary, and Desmos graphs.
+Visualizer  -> the image as a matrix, the math summary, and a Desmos graph.
 """
 
 import os
@@ -371,8 +371,8 @@ def build_ui():
         dpg.add_group(tag="matrix_group")
         dpg.add_separator()
         dpg.add_text("", tag="summary")
-        dpg.add_text("Desmos (opens in your browser). Graphs start at the top-left cell of the matrix above:\n"
-                     "its 2x2 block, its row, and the channel selected.", color=(170, 170, 170))
+        dpg.add_text("Desmos (opens in your browser). The graph uses the 2x2 block at the top-left cell\n"
+                     "of the matrix above, in the channel selected.", color=(170, 170, 170))
         dpg.add_group(tag="desmos_buttons", horizontal=True)
 
 

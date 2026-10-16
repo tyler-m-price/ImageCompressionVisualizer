@@ -17,8 +17,6 @@ from compressors.base import Compressor, CompressionResult, register
 from linalg_manual import frobenius_norm_sq, jacobi_svd, reconstruct
 
 ESTIMATED_SWEEPS = 8  # typical Jacobi sweeps for photos; only used for the progress bar
-SCANLINE_SAMPLES = 100  # columns sampled for the Desmos scanline view
-SCANLINE_NUMBERS = 20000  # cap on precomputed values per scanline list (keeps Desmos fast)
 PATCH = 6  # side of the pixel patch drawn in the Desmos transformation view
 
 
@@ -126,8 +124,6 @@ class SVDCompressor(Compressor):
     def desmos_views(self):
         return [
             ("Desmos: 2x2 block as a transformation", self._desmos_transform),
-            ("Desmos: singular value spectrum", self._desmos_spectrum),
-            ("Desmos: rebuild a row layer by layer", self._desmos_scanline),
         ]
 
     # ------------------------------------------------------------ Desmos
@@ -278,77 +274,6 @@ class SVDCompressor(Compressor):
             viz.expr(g, rf"{color_name}=\operatorname{{rgb}}\left({rgb[0]},{rgb[1]},{rgb[2]}\right)")
 
         viz.set_bounds(g, -2.5, 6.4, -3.0, 3.8, square=True)
-        return g
-
-    def _desmos_spectrum(self, analysis, result, channel, row, col):
-        s = [float(x) for x in analysis["s"][channel] if x > 1e-9]
-        count = len(s)
-        total = frobenius_norm_sq(s)
-        cumulative, running = [], 0.0
-        for x in s:
-            running += x * x
-            cumulative.append(running / total)
-        k0 = min(result.extra["k"], count)
-        logs = [np.log10(x) for x in s]
-
-        g = viz.new_graph(f"svd_spectrum_{viz.CHANNEL_NAMES[channel].lower()}")
-        viz.data(g, f"S={viz.desmos_list(s, 3)}")
-        viz.data(g, f"Q={viz.desmos_list(cumulative, 6)}")
-        viz.expr(g, rf"I=\left[1,...,{count}\right]")
-        viz.slider(g, "k", k0, 1, count)
-        viz.expr(g, r"p=\operatorname{round}\left(100Q\left[k\right],2\right)")
-        # All singular values (log scale) in gray, the kept ones in red.
-        viz.expr(g, r"\left(I,\log\left(S\right)\right)", color="#888888", pointSize=4)
-        viz.expr(g, r"\left(I\left[1,...,k\right],\log\left(S\left[1,...,k\right]\right)\right)",
-                 color="#c74440", pointSize=6)
-        viz.expr(g, "x=k", color="#c74440", lineStyle="DASHED")
-        viz.expr(g, r"\left(k,\log\left(S\left[k\right]\right)\right)", color="#c74440",
-                 showLabel=True, label="keep k=${k} layers: ${p}% of the energy")
-        viz.set_bounds(g, -0.05 * count, 1.05 * count, min(logs) - 0.5, max(logs) + 0.5)
-        return g
-
-    def _desmos_scanline(self, analysis, result, channel, row, col):
-        u, s, v = analysis["u"][channel], analysis["s"][channel], analysis["v"][channel]
-        image = analysis["image"]
-        height, width, _ = image.shape
-        row = max(0, min(height - 1, int(row)))
-
-        step = max(1, -(-width // SCANLINE_SAMPLES))  # ceil, so at most SCANLINE_SAMPLES columns
-        cols = list(range(0, width, step))
-        n = len(cols)
-        k_max = max(1, min(len(s), SCANLINE_NUMBERS // n))
-
-        # For every k: the k-th layer s_k u_k[row] v_k^T on this row, and the
-        # running sum of layers 1..k (= that row of A_k).
-        layers, rows_k = [], []
-        running = np.zeros(n)
-        v_cols = v[cols, :]
-        for i in range(k_max):
-            layer = s[i] * u[row, i] * v_cols[:, i]
-            running = running + layer
-            layers.append(layer)
-            rows_k.append(running.copy())
-
-        original = [image[row, c, channel] for c in cols]
-        app_row = [result.image_rgb[row, c, channel] for c in cols]
-
-        g = viz.new_graph(f"svd_scanline_{viz.CHANNEL_NAMES[channel].lower()}_row{row}")
-        viz.slider(g, "k", min(result.extra["k"], k_max), 1, k_max)
-        viz.data(g, f"J={viz.desmos_list(cols, 0)}")
-        viz.data(g, f"O={viz.desmos_list(original, 1)}")
-        viz.data(g, f"P={viz.desmos_list(app_row, 1)}")
-        # R = row of A_k (sum of the first k layers); T = the k-th layer alone.
-        viz.stepped_list(g, "R", rows_k, decimals=2)
-        viz.stepped_list(g, "T", layers, decimals=2)
-        viz.expr(g, r"\left(J,O\right)", color="#000000", lines=True, points=False, lineWidth=2)
-        viz.expr(g, r"\left(J,R\right)", color="#c74440", lines=True, points=False, lineWidth=3)
-        viz.expr(g, r"\left(J,T\right)", color="#2d70b3", lines=True, points=False, lineStyle="DASHED")
-        viz.expr(g, r"\left(J,P\right)", color="#388c46", lines=True, points=False, hidden=True)
-        viz.expr(g, rf"\left({0.02 * width},285\right)", color="#000000", pointSize=0, showLabel=True,
-                 labelOrientation="right",
-                 label=f"Row {row} ({viz.CHANNEL_NAMES[channel]}): black = A, red = A_k, "
-                       "blue dashed = layer k on its own")
-        viz.set_bounds(g, -0.02 * width, 1.02 * width, -100, 300)
         return g
 
 
