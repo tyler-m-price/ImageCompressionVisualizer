@@ -1,12 +1,21 @@
 """Rank-k SVD image compression.
 
-Each color channel is an m x n matrix A. Its SVD A = U S V^T writes A as a sum
-of rank-one "layers" s_i u_i v_i^T ordered by importance (s_1 >= s_2 >= ...).
-Keeping only the first k layers gives the best rank-k approximation A_k
-(Eckart-Young), stored with k(m + n + 1) numbers instead of m * n.
+1. Turn the image into matrices: one m x n matrix A per color channel
+   (a grayscale image has a single matrix).
+2. Compute the SVD A = U S V^T with np.linalg.svd. The singular values
+   s_1 >= s_2 >= ... >= 0 measure how much each rank-one "layer"
+   s_i u_i v_i^T contributes to the image.
+3. Choose k, the number of singular values to keep.
+4. Truncate: U_k = first k columns of U, S_k = top-left k x k block of S,
+   V_k^T = first k rows of V^T.
+5. Reconstruct A_k = U_k S_k V_k^T (the best rank-k approximation of A),
+   clip to [0, 255] and round.
+6. A_k is stored with k(m + n + 1) numbers instead of m * n.
 
-Compression amount is the fraction of singular values dropped:
+Compression amount is the share of storage saved, so k is the largest rank
+with k(m + n + 1) <= (1 - amount) * m * n:
   0%   -> keep full rank (no loss)
+  90%  -> the factors take about 10% of the raw pixel count
   100% -> keep one singular value (maximum compression)
 """
 
@@ -14,74 +23,76 @@ import numpy as np
 
 import visualizer as viz
 from compressors.base import Compressor, CompressionResult, register
-from linalg_manual import frobenius_norm_sq, jacobi_svd, reconstruct
 
-ESTIMATED_SWEEPS = 8  # typical Jacobi sweeps for photos; only used for the progress bar
 PATCH = 6  # side of the pixel patch drawn in the Desmos transformation view
 
 
-def _rank_from_amount(rank, amount_percent):
+def _rank_from_amount(m, n, amount_percent):
+    """Step 3: pick k so the truncated factors use (1 - amount) of the raw storage."""
+    rank = min(m, n)
     amount = max(0.0, min(100.0, float(amount_percent)))
     if amount <= 0.0:
         return rank
-    if amount >= 100.0:
-        return 1
-    kept = int(round((1.0 - amount / 100.0) * rank))
-    return max(1, min(rank, kept))
+    budget = (1.0 - amount / 100.0) * m * n
+    return max(1, min(rank, int(budget // (m + n + 1))))
 
 
 def _clip_round(a):
     """Clamp to the displayable range [0, 255] and round to whole intensities."""
-    return np.floor(np.minimum(np.maximum(a, 0.0), 255.0) + 0.5)
+    return np.rint(np.clip(a, 0.0, 255.0))
 
 
 class SVDCompressor(Compressor):
     name = "SVD (rank-k approximation)"
-    amount_help = "Compression % = share of singular values thrown away (0% keeps all of them)."
+    amount_help = ("Compression % = share of storage saved: the kept factors U_k, S_k, V_k^T "
+                   "take (100 - %) of the raw pixel count. 0% keeps every singular value.")
 
     def analyze(self, image_rgb, progress=None):
+        # Step 1: one matrix per channel. Grayscale images have identical
+        # channels, so decompose that single matrix once and share it.
         image = np.asarray(image_rgb, dtype=float)
         channels = [image[:, :, c] for c in range(3)]
+        grayscale = np.array_equal(channels[0], channels[1]) and np.array_equal(channels[0], channels[2])
+        matrices = channels[:1] if grayscale else channels
 
-        # Grayscale images have identical channels: decompose only once.
-        if (np.abs(channels[0] - channels[1]).max() == 0
-                and np.abs(channels[0] - channels[2]).max() == 0):
-            stack, channel_map = np.stack([channels[0]]), [0, 0, 0]
-        else:
-            stack, channel_map = np.stack(channels), [0, 1, 2]
-
-        def on_sweep(sweep, fraction):
+        # Step 2: A = U S V^T. full_matrices=False returns only the first
+        # r = min(m, n) columns of U and rows of V^T; the rest multiply zero
+        # rows/columns of S, so they never affect A or A_k.
+        factors = []
+        for i, a in enumerate(matrices):
             if progress is not None:
-                done = min(0.97, (sweep + fraction) / ESTIMATED_SWEEPS)
-                progress(done, f"Jacobi sweep {sweep + 1}: orthogonalizing column pairs")
-
-        u, s, v = jacobi_svd(stack, progress=on_sweep)
-        u, s, v = list(u), list(s), list(v)  # one entry per decomposed matrix
+                progress(i / len(matrices), f"Computing the SVD of matrix {i + 1} of {len(matrices)}")
+            factors.append(np.linalg.svd(a, full_matrices=False))
+        if grayscale:
+            factors *= 3
         return {
             "image": image,
-            "u": [u[i] for i in channel_map],
-            "s": [s[i] for i in channel_map],
-            "v": [v[i] for i in channel_map],
+            "u": [f[0] for f in factors],
+            "s": [f[1] for f in factors],
+            "vt": [f[2] for f in factors],
         }
 
     def compress(self, analysis, amount_percent):
         image = analysis["image"]
         height, width, _ = image.shape
         rank = min(height, width)
-        k = _rank_from_amount(rank, amount_percent)
+        k = _rank_from_amount(height, width, amount_percent)
 
         rebuilt = {}
         channels = []
         for c in range(3):
-            key = id(analysis["u"][c])  # shared decomposition for grayscale
-            if key not in rebuilt:
-                rebuilt[key] = _clip_round(reconstruct(analysis["u"][c], analysis["s"][c], analysis["v"][c], k))
-            channels.append(rebuilt[key])
+            u, s, vt = analysis["u"][c], analysis["s"][c], analysis["vt"][c]
+            if id(u) not in rebuilt:  # shared decomposition for grayscale
+                # Step 4: truncate to U_k (m x k), S_k (k x k), V_k^T (k x n).
+                u_k, s_k, vt_k = u[:, :k], np.diag(s[:k]), vt[:k, :]
+                # Step 5: A_k = U_k S_k V_k^T, clipped back to pixel values.
+                rebuilt[id(u)] = _clip_round(u_k @ s_k @ vt_k)
+            channels.append(rebuilt[id(u)])
         compressed = np.stack(channels, axis=2)
 
         # ||A||_F^2 = sum s_i^2 and ||A - A_k||_F^2 = sum_{i>k} s_i^2.
-        total = sum(frobenius_norm_sq(s) for s in analysis["s"])
-        dropped = sum(frobenius_norm_sq(s[k:]) for s in analysis["s"])
+        total = sum(float(np.sum(s ** 2)) for s in analysis["s"])
+        dropped = sum(float(np.sum(s[k:] ** 2)) for s in analysis["s"])
 
         extra = {
             "k": k,
@@ -106,9 +117,9 @@ class SVDCompressor(Compressor):
             "Each channel is a matrix A (m x n), factored as A = U S V^T:",
             f"  A: {m}x{n}   U: {m}x{r}   S: {r}x{r} (diagonal)   V^T: {r}x{n}",
             "",
-            "A_k keeps the k largest singular values s_1 >= ... >= s_k:",
-            "  A_k = s_1 u_1 v_1^T + s_2 u_2 v_2^T + ... + s_k u_k v_k^T",
-            f"  k = {k} of {r} singular values kept  (compression setting {e['amount']}%)",
+            f"Keep the k = {k} largest of {r} singular values  (compression setting {e['amount']}%):",
+            f"  U_k: {m}x{k}   S_k: {k}x{k}   V_k^T: {k}x{n}",
+            "  A_k = U_k S_k V_k^T = s_1 u_1 v_1^T + ... + s_k u_k v_k^T",
             "",
             f"Storage per channel: k(m+n+1) = {k * (m + n + 1):,} numbers",
             f"           vs raw:   m*n      = {m * n:,} numbers  ({100 * ratio:.1f}%)",
@@ -134,12 +145,12 @@ class SVDCompressor(Compressor):
         The unit circle goes to an ellipse. Rotating an orthonormal pair
         (v_1, v_2) by an angle phi (theta is reserved for polar plots in
         Desmos) until A v_1 and A v_2 are perpendicular finds the
-        block's singular vectors; that angle is the Jacobi rotation used in
-        linalg_manual.jacobi_svd. The k slider swaps a, b, c, d for the
+        block's singular vectors (the same angle a Jacobi SVD rotates by).
+        The k slider swaps a, b, c, d for the
         entries of A_k, showing how compression reshapes the transformation
         and the surrounding pixels.
         """
-        u, s, v = analysis["u"][channel], analysis["s"][channel], analysis["v"][channel]
+        u, s, vt = analysis["u"][channel], analysis["s"][channel], analysis["vt"][channel]
         image = analysis["image"]
         height, width, _ = image.shape
         size = max(2, min(PATCH, height, width))
@@ -150,7 +161,7 @@ class SVDCompressor(Compressor):
         # Row i of us, column j of vp: the pieces of layer l that land on the
         # patch, so A_k[row+i, col+j] = sum_{l<k} us[i, l] * vp[j, l].
         us = (u[row:row + size, :] * s) / 255.0
-        vp = v[col:col + size, :]
+        vp = vt[:, col:col + size].T
         block_layers = {
             "a": us[0] * vp[0], "b": us[0] * vp[1],
             "c": us[1] * vp[0], "d": us[1] * vp[1],

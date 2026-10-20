@@ -25,10 +25,10 @@ DISPLAY_MAX_W, DISPLAY_MAX_H = 520, 370
 
 AMOUNTS = [f"{p}%" for p in range(0, 101, 5)]
 DEFAULT_AMOUNT = "50%"
-# The decomposition cost grows like n^3, so large photos are scaled down to a
-# working copy first. The saved image has the working copy's size.
-RESOLUTIONS = {"256 px (fast)": 256, "384 px (balanced)": 384, "512 px (slow)": 512}
-DEFAULT_RESOLUTION = "384 px (balanced)"
+# The SVD costs about m n min(m, n), so very large photos can be scaled down to
+# a working copy first. The saved image has the working copy's size.
+RESOLUTIONS = {"512 px (fast)": 512, "1024 px (balanced)": 1024, "2048 px (sharp)": 2048, "Full size (slow)": None}
+DEFAULT_RESOLUTION = "1024 px (balanced)"
 MATRIX_ROWS, MATRIX_COLS = 12, 12
 VIEW_ORIGINAL, VIEW_COMPRESSED, VIEW_DIFF = "Original A", "Compressed A_k", "Difference A - A_k"
 
@@ -121,7 +121,7 @@ def prepare_working_image():
     side = RESOLUTIONS[dpg.get_value("resolution")]
     img = state.source
     full_w, full_h = img.size
-    if max(full_w, full_h) > side:
+    if side is not None and max(full_w, full_h) > side:
         scale = side / max(full_w, full_h)
         img = img.resize((max(1, round(full_w * scale)), max(1, round(full_h * scale))), Image.LANCZOS)
     state.image = np.asarray(img, dtype=float)
