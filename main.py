@@ -29,7 +29,10 @@ DEFAULT_AMOUNT = "50%"
 # a working copy first. The saved image has the working copy's size.
 RESOLUTIONS = {"512 px (fast)": 512, "1024 px (balanced)": 1024, "2048 px (sharp)": 2048, "Full size (slow)": None}
 DEFAULT_RESOLUTION = "1024 px (balanced)"
-MATRIX_ROWS, MATRIX_COLS = 12, 12
+# Enough to show a whole 384x512 image at once. Dear ImGui tables allow at most
+# 512 columns, and one of them holds the row index, so 511 value columns fit.
+MATRIX_ROWS, MATRIX_COLS = 384, 511
+MATRIX_VIEW_H = 280  # the table scrolls inside this height
 VIEW_ORIGINAL, VIEW_COMPRESSED, VIEW_DIFF = "Original A", "Compressed A_k", "Difference A - A_k"
 
 # Controls that need an image (or a result) before they can be used.
@@ -291,8 +294,12 @@ def refresh_matrix():
         dpg.add_text(f"Blue = A_k too dark, red = too bright. Largest error here: {max_abs:.0f}",
                      parent="matrix_group", color=(170, 170, 170))
 
+    # Scroll inside the table, keep the index row/column pinned, and let the
+    # clipper skip rows that are off screen so large views stay responsive.
     with dpg.table(parent="matrix_group", header_row=True, borders_innerH=True, borders_innerV=True,
-                   borders_outerH=True, borders_outerV=True, policy=dpg.mvTable_SizingFixedFit) as table:
+                   borders_outerH=True, borders_outerV=True, policy=dpg.mvTable_SizingFixedFit,
+                   scrollX=True, scrollY=True, freeze_rows=1, freeze_columns=1, clipper=True,
+                   height=MATRIX_VIEW_H) as table:
         dpg.add_table_column(label="i \\ j")
         for c in cols:
             dpg.add_table_column(label=str(c))
