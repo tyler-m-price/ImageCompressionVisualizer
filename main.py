@@ -232,7 +232,9 @@ def on_save():
     if os.path.splitext(path)[1].lower() not in IMAGE_EXTENSIONS:
         path += ".png"
     try:
-        Image.fromarray(state.result.image_rgb.astype(np.uint8)).save(path)
+        # Clip before the uint8 cast: out-of-range values would wrap (260 -> 4) and show as speckles.
+        pixels = np.rint(np.clip(state.result.image_rgb, 0.0, 255.0)).astype(np.uint8)
+        Image.fromarray(pixels).save(path)
         set_status(f"Saved {path}")
     except Exception as exc:
         set_status(f"Could not save: {exc}")
