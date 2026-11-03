@@ -24,8 +24,6 @@ import numpy as np
 import visualizer as viz
 from compressors.base import Compressor, CompressionResult, register
 
-PATCH = 6  # side of the pixel patch drawn in the Desmos transformation view
-
 
 def _rank_from_amount(m, n, amount_percent):
     """Step 3: pick k so the truncated factors use (1 - amount) of the raw storage."""
@@ -147,21 +145,19 @@ class SVDCompressor(Compressor):
         Desmos) until A v_1 and A v_2 are perpendicular finds the
         block's singular vectors (the same angle a Jacobi SVD rotates by).
         The k slider swaps a, b, c, d for the
-        entries of A_k, showing how compression reshapes the transformation
-        and the surrounding pixels.
+        entries of A_k, showing how compression reshapes the transformation.
         """
         u, s, vt = analysis["u"][channel], analysis["s"][channel], analysis["vt"][channel]
         image = analysis["image"]
         height, width, _ = image.shape
-        size = max(2, min(PATCH, height, width))
-        row = max(0, min(height - size, int(row)))
-        col = max(0, min(width - size, int(col)))
+        row = max(0, min(height - 2, int(row)))
+        col = max(0, min(width - 2, int(col)))
         rank = len(s)
 
         # Row i of us, column j of vp: the pieces of layer l that land on the
-        # patch, so A_k[row+i, col+j] = sum_{l<k} us[i, l] * vp[j, l].
-        us = (u[row:row + size, :] * s) / 255.0
-        vp = vt[:, col:col + size].T
+        # block, so A_k[row+i, col+j] = sum_{l<k} us[i, l] * vp[j, l].
+        us = (u[row:row + 2, :] * s) / 255.0
+        vp = vt[:, col:col + 2].T
         block_layers = {
             "a": us[0] * vp[0], "b": us[0] * vp[1],
             "c": us[1] * vp[0], "d": us[1] * vp[1],
@@ -170,11 +166,6 @@ class SVDCompressor(Compressor):
             "a": image[row, col, channel], "b": image[row, col + 1, channel],
             "c": image[row + 1, col, channel], "d": image[row + 1, col + 1, channel],
         }
-        patches, running = [], np.zeros((size, size))
-        for i in range(rank):
-            running = running + us[:, i][:, None] * vp[:, i][None, :]
-            patches.append(np.minimum(np.maximum(running, 0.0), 1.0).ravel())
-        patch_original = image[row:row + size, col:col + size, channel].ravel() / 255.0
 
         name = viz.CHANNEL_NAMES[channel]
         g = viz.new_graph(f"svd_transform_{name.lower()}_r{row}_c{col}")
@@ -244,47 +235,13 @@ class SVDCompressor(Compressor):
         viz.expr(g, r"\left(aq_{1}+bq_{2},cq_{1}+dq_{2}\right)", color="#6042a6",
                  showLabel=True, label="Aₖx")
 
-        # --- the surrounding pixels: original patch (top) and A_k patch (bottom)
-        cell = 0.4
-        half = viz.desmos_number(cell / 2)
-        left, top_o, top_k = 2.9, 2.9, -0.5
-        for y_name, color_name in (("Y_{o}", "C_{o}"), ("Y_{k}", "C_{k}")):
-            corners = [(f"X-{half}", f"{y_name}-{half}"), (f"X+{half}", f"{y_name}-{half}"),
-                       (f"X+{half}", f"{y_name}+{half}"), (f"X-{half}", f"{y_name}+{half}")]
-            points = ",".join(rf"\left({x},{y}\right)" for x, y in corners)
-            viz.expr(g, rf"\operatorname{{polygon}}\left({points}\right)",
-                     colorLatex=color_name, fillOpacity=1, lineWidth=1, lineOpacity=0.3)
-        for top in (top_o, top_k):
-            right, bottom = left + 2 * cell, top - 2 * cell
-            corners = [(left, top), (right, top), (right, bottom), (left, bottom)]
-            points = ",".join(rf"\left({viz.desmos_number(x)},{viz.desmos_number(y)}\right)" for x, y in corners)
-            viz.expr(g, rf"\operatorname{{polygon}}\left({points}\right)", color="#f0b400", fillOpacity=0, lineWidth=4)
-        last_r, last_c = row + size - 1, col + size - 1
-        viz.expr(g, rf"\left({left},{viz.desmos_number(top_o + 0.2)}\right)", color="#000000", pointSize=0,
-                 showLabel=True, labelOrientation="right",
-                 label=f"Original A ({name}), rows {row}-{last_r}, cols {col}-{last_c}")
-        viz.expr(g, rf"\left({left},{viz.desmos_number(top_k + 0.2)}\right)", color="#c74440", pointSize=0,
-                 showLabel=True, labelOrientation="right",
-                 label="Aₖ with k = ${k}  (yellow: block [a b; c d])")
-
         # --- data (goes into a collapsed folder at the bottom of the expression list)
         originals = [block_original[key] / 255.0 for key in "abcd"]
         viz.data(g, f"B_{{0}}={viz.desmos_list(originals, 5)}")
         for key in "abcd":
             viz.data(g, f"L_{{{key}}}={viz.desmos_list(block_layers[key], 6)}")
-        xs = [left + (j + 0.5) * cell for i in range(size) for j in range(size)]
-        ys = [-(i + 0.5) * cell for i in range(size) for j in range(size)]
-        viz.data(g, f"X={viz.desmos_list(xs, 3)}")
-        viz.data(g, rf"Y_{{o}}={viz.desmos_list([top_o + y for y in ys], 3)}")
-        viz.data(g, rf"Y_{{k}}={viz.desmos_list([top_k + y for y in ys], 3)}")
-        viz.data(g, f"H_{{0}}={viz.desmos_list(patch_original, 3)}")
-        viz.stepped_list(g, "H", patches)
-        rgb = ["25", "25", "25"]
-        for list_name, color_name in (("H_{0}", "C_{o}"), ("H", "C_{k}")):
-            rgb[channel] = f"25+216.75{list_name}"
-            viz.expr(g, rf"{color_name}=\operatorname{{rgb}}\left({rgb[0]},{rgb[1]},{rgb[2]}\right)")
 
-        viz.set_bounds(g, -2.5, 6.4, -3.0, 3.8, square=True)
+        viz.set_bounds(g, -2.5, 3.5, -2.5, 3.8, square=True)
         return g
 
 

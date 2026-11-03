@@ -14,7 +14,7 @@ python main.py
 1. **Config Menu**: *Select Image...* opens your OS file picker. Then choose a technique and a compression amount, and press *Compress*. *Save compressed image...* writes the result to disk.
 2. **Image**: the original (working copy) and the compressed result.
 3. **Compression Visualizer**: one color channel shown as a matrix of numbers (original, compressed, or the difference), a summary of the math, and a button that opens an interactive Desmos graph in your browser (internet connection required). The graph has a `k` slider for the number of singular values kept:
-   - **2x2 block as a transformation**: the 2x2 block at the matrix view's top-left cell acts on the plane, mapping the unit circle to an ellipse. Rotate the orthonormal pair (v1, v2) with `φ` until A·v1 ⟂ A·v2 to find the block's singular vectors (the same rotation a Jacobi SVD performs). Drag `k` to watch compression reshape the ellipse, and watch the 6x6 patch of pixels next to it change.
+   - **2x2 block as a transformation**: the 2x2 block at the matrix view's top-left cell acts on the plane, mapping the unit circle to an ellipse. Rotate the orthonormal pair (v1, v2) with `φ` until A·v1 ⟂ A·v2 to find the block's singular vectors (the same rotation a Jacobi SVD performs). Drag `k` to watch compression reshape the ellipse.
 
 Photos can be scaled down to a *working resolution* (512/1024/2048 px on the long side, or full size) before compressing. The first compression of an image computes the decomposition. After that, changing the amount is instant.
 

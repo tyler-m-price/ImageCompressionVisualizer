@@ -155,33 +155,6 @@ def curve(graph, x_latex, y_latex, t_min="0", t_max="1", **settings):
     )
 
 
-def stepped_list(graph, name, blocks, index="k", decimals=3):
-    """Define list `name` to equal blocks[index - 1] as the slider `index` moves.
-
-    Desmos list literals are capped at DESMOS_LIST_LIMIT entries, so the
-    blocks are concatenated into chunk lists name_{1}, name_{2}, ... and
-    `name` slices the right one with a piecewise expression. (Precomputing
-    every step keeps Desmos fast; summing layers inside Desmos with list
-    comprehensions made the calculator hang.)
-    """
-    length = len(blocks[0])
-    per_chunk = max(1, DESMOS_LIST_LIMIT // length)
-    branches = []
-    for number, start in enumerate(range(0, len(blocks), per_chunk), 1):
-        chunk = blocks[start:start + per_chunk]
-        chunk_name = f"{name}_{{{number}}}"
-        data(graph, f"{chunk_name}={desmos_list([x for block in chunk for x in block], decimals)}")
-        # Block number index - start inside this chunk spans entries lo..hi.
-        lo = rf"{length}\left({index}-{start + 1}\right)+1"
-        hi = rf"{length}\left({index}-{start}\right)" if start else f"{length}{index}"
-        branches.append((start + len(chunk), rf"{chunk_name}\left[{lo},...,{hi}\right]"))
-    if len(branches) == 1:
-        expr(graph, f"{name}={branches[0][1]}")
-        return
-    cases = ",".join(rf"{index}\le{end}:{piece}" for end, piece in branches[:-1])
-    expr(graph, rf"{name}=\left\{{{cases},{branches[-1][1]}\right\}}")
-
-
 def set_bounds(graph, left, right, bottom, top, square=False):
     """Viewport to show once the page loads. square=True widens one axis so
     one unit is the same length in x and y (circles stay round)."""
