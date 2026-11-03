@@ -6,6 +6,8 @@ import tempfile
 import webbrowser
 from pathlib import Path
 
+import numpy as np
+
 from PyDesmos import Graph
 
 CHANNEL_NAMES = ["Red", "Green", "Blue"]
@@ -35,6 +37,36 @@ def cell_colors(value, mode, channel, max_abs_diff=1.0):
     brightness = 0.299 * bg[0] + 0.587 * bg[1] + 0.114 * bg[2]
     text = (0, 0, 0, 255) if brightness > 110 else (255, 255, 255, 255)
     return bg + (255,), text
+
+
+def cell_color_array(data, mode, channel, max_abs_diff=1.0):
+    """The background colors of cell_colors for a whole matrix, as float RGBA in [0, 1]."""
+    h, w = data.shape
+    rgba = np.ones((h, w, 4), dtype=np.float32)
+    if mode == "diff":
+        level = np.minimum(1.0, np.abs(data) / max(max_abs_diff, 1e-9))
+        shade = np.floor(255 * (1.0 - level)) / 255.0
+        positive = data >= 0
+        rgba[:, :, 0] = np.where(positive, shade, 1.0)
+        rgba[:, :, 1] = shade
+        rgba[:, :, 2] = np.where(positive, 1.0, shade)
+        return rgba
+
+    level = np.clip(data, 0.0, 255.0)
+    rgba[:, :, :3] = 25 / 255.0
+    rgba[:, :, channel] = np.floor(level * 0.85 + 25) / 255.0
+    return rgba
+
+
+def colormap_colors(mode, channel):
+    """Colors for a plot colormap that matches cell_colors.
+
+    Value mode is a straight ramp from the color of 0 to the color of 255; diff mode runs
+    red (-max) -> white (0) -> blue (+max), so the plot scale must be symmetric.
+    """
+    if mode == "diff":
+        return [(255, 0, 0, 255), (255, 255, 255, 255), (0, 0, 255, 255)]
+    return [cell_colors(0, mode, channel)[0], cell_colors(255, mode, channel)[0]]
 
 
 # ---------------------------------------------------------------- Desmos
